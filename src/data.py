@@ -1,45 +1,50 @@
 from pathlib import Path
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
-# standard image size used by pretrained models like ResNet 224x224
-IMAGE_SIZE = 224
-BATCH_SIZE = 16
-
-# normalisation values used for pretrained models
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
-
+# GTSRB images vary in size, so we need a fixed size for batching
+# Resize to a modest square 48x48 for initial custom CNN
+IMAGE_SIZE = 48
+BATCH_SIZE = 64
 
 def get_transforms():
     # training data: add a bit of randomness to help the model generalise
     train_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        # random flip so the model doesn’t rely on left/right orientation
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ToTensor(),
-        # match the format expected by pretrained models
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        transforms.ToTensor()
     ])
 
     eval_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        transforms.ToTensor()
     ])
 
     return train_transform, eval_transform
 
 
 def get_datasets(data_dir="data"):
-    # load images from folders
-    # folder names = class labels (person / not_person)
-    data_dir = Path(data_dir)
     train_transform, eval_transform = get_transforms()
 
-    train_dataset = datasets.ImageFolder(data_dir / "train", transform=train_transform)
-    val_dataset = datasets.ImageFolder(data_dir / "val", transform=eval_transform)
-    test_dataset = datasets.ImageFolder(data_dir / "test", transform=eval_transform)
+    full_train_dataset = datasets.GTSRB(
+        root=data_dir,
+        split="train",
+        download=True,
+        transform=train_transform
+    )
+    test_dataset = datasets.GTSRB(
+        root=data_dir,
+        split="test",
+        download=True,
+        transform=eval_transform
+    )
+
+    train_size = int(0.8 * len(full_train_dataset))
+    val_size = len(full_train_dataset) - train_size
+
+    train_dataset, val_dataset = random_split(
+        full_train_dataset,
+        [train_size, val_size]
+    )
 
     return train_dataset, val_dataset, test_dataset
 
@@ -53,13 +58,14 @@ def get_dataloaders(data_dir="data", batch_size=BATCH_SIZE):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    return train_loader, val_loader, test_loader, train_dataset.classes
+    return train_loader, val_loader, test_loader
 
 
 if __name__ == "__main__":
     # quick check to make sure everything is working
-    train_loader, val_loader, test_loader, classes = get_dataloaders()
-    print("Classes:", classes)
+    train_loader, val_loader, test_loader = get_dataloaders()
+
     images, labels = next(iter(train_loader))
-    print("Image batch shape:", images.shape)
-    print("Labels:", labels)
+    print("Image batch shape: ", images.shape)
+    print("Labels batch shape: ", labels)
+    print("Number of classes: ", 43)
